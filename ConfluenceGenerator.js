@@ -1,7 +1,7 @@
 (function () {
     var ConfluenceGenerator;
 
-    (function(root) {
+    (function (root) {
         var ref;
         if ((ref = root.bundle) != null ? ref.minApiVersion('0.2.0') : void 0) {
             return root.Mustache = require("./mustache");
@@ -11,6 +11,9 @@
     })(this);
 
     ConfluenceGenerator = function () {
+        this.escapeHTML = function(input) {
+            return input.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
         this.request = function (paw_request) {
             var headers = [];
             var is_json = false;
@@ -29,14 +32,14 @@
                 }
                 headers.push({
                     key: key,
-                    value: this.concatDynamicString(value)
+                    value: this.escapeHTML(this.concatDynamicString(value))
                 });
             }
 
             console.log(headers);
 
             var has_headers = headers.length > 0;
-            var body = paw_request.body;
+            var body = this.escapeHTML(paw_request.body);
             var has_body = body.length > 0;
 
             if (body.length && is_json) {
@@ -69,21 +72,21 @@
                 }
                 headers.push({
                     key: key,
-                    value: value
+                    value: this.escapeHTML(value)
                 });
             }
             has_headers = headers.length > 0;
-            body = exchange.responseBody;
+            body = this.escapeHTML(exchange.responseBody);
             has_body = body.length > 0;
             if (has_body) {
                 if (is_json) {
                     body = JSON.stringify(JSON.parse(body), null, 4);
                 }
                 /*body_indentation = '        ';
-                if (has_headers) {
-                    body_indentation += '    ';
-                }
-                body = body.replace(/^/gm, body_indentation);*/
+                 if (has_headers) {
+                 body_indentation += '    ';
+                 }
+                 body = body.replace(/^/gm, body_indentation);*/
             }
             return {
                 statusCode: exchange.responseStatusCode,
@@ -104,7 +107,7 @@
                     ret += s;
                 }
                 else {
-                    if(s.type != undefined && s.type == "com.luckymarmot.EnvironmentVariableDynamicValue") {
+                    if (s.type != undefined && s.type == "com.luckymarmot.EnvironmentVariableDynamicValue") {
                         ret += "[" + this.context.getEnvironmentVariableById(s.environmentVariable).name + "]";
                     } else {
                         ret += s;
@@ -115,38 +118,84 @@
         }
 
         this.context = null;
-        this.generate = function (context) {
+        this.generate = function (context, requests, options) {
             this.context = context;
-            var paw_request = this.context.getCurrentRequest();
-            var request = this.request(paw_request);
+            var resultHtml = '';
+            for (var requestIdx in requests) {
+                paw_request = requests[requestIdx];
+                var request = this.request(paw_request);
 
-            var url = this.concatDynamicString(paw_request.getUrl(true));
+                var url = this.concatDynamicString(paw_request.getUrl(true));
 
-            var result = paw_request.method + ' ' + url;
+                var result = paw_request.method + ' ' + url;
 
-            // get headers as an object: string -> DynamicString
-            var headers = paw_request.getHeaders(true);
-            result += '\n\nHeaders:\n\n';
-            // enumerate headers
-            for (var headerName in headers) { // headerName is a string
-                var headerValue = headers[headerName]; // DynamicString
-                result += headerName + ': ' + this.concatDynamicString(headerValue) + '\n';
+                // get headers as an object: string -> DynamicString
+                var headers = paw_request.getHeaders(true);
+                result += '\n\nHeaders:\n\n';
+                // enumerate headers
+                for (var headerName in headers) { // headerName is a string
+                    var headerValue = headers[headerName]; // DynamicString
+                    result += headerName + ': ' + this.concatDynamicString(headerValue) + '\n';
+                }
+                if (request.body.length) {
+                    result += '\n\nBody:\n\n' + request.body;
+                }
+
+                //return result;
+
+
+                template = readFile("confluence.mustache");
+                resultHtml += Mustache.render(template, {
+                    name: paw_request.name,
+                    method: paw_request.method,
+                    path: url,
+                    request: this.request(paw_request),
+                    response: this.response(paw_request.getLastExchange())
+                });
             }
-            if (request.body.length) {
-                result += '\n\nBody:\n\n' + request.body;
-            }
 
-            //return result;
+            var confPageUrl = options.host + "rest/api/content/" + options.page_id;
 
-
-            template = readFile("confluence.mustache");
-            return Mustache.render(template, {
-                name: paw_request.name,
-                method: paw_request.method,
-                path: url,
-                request: this.request(paw_request),
-                response: this.response(paw_request.getLastExchange())
+            var dv = new DynamicValue('com.luckymarmot.BasicAuthDynamicValue', {
+                username: options.username,
+                password: options.password
             });
+
+            var httpRequest = new NetworkHTTPRequest();
+            httpRequest.requestUrl = confPageUrl + "?expand=body.view,version";
+            httpRequest.requestMethod = "GET";
+            httpRequest.setRequestHeader('Content-Type', 'application/json');
+            httpRequest.setRequestHeader('Authorization', dv.getEvaluatedString());
+            /*httpRequest.requestBody = JSON.stringify({
+                name: 'Paw'
+            })*/
+            httpRequest.send();
+
+//            console.log('HTTP ' + httpRequest.responseStatusCode)
+            var confPageResponse = JSON.parse(httpRequest.responseBody)
+            var confPageVersion = confPageResponse.version.number;
+
+            var httpRequest = new NetworkHTTPRequest();
+            httpRequest.requestUrl = confPageUrl;
+            httpRequest.requestMethod = "PUT";
+            httpRequest.setRequestHeader('Content-Type', 'application/json');
+            httpRequest.setRequestHeader('Authorization', dv.getEvaluatedString());
+            httpRequest.requestBody = JSON.stringify({
+                version: {
+                    number: (confPageVersion+1)
+                },
+                title: confPageResponse.title,
+                type: "page",
+                body: {
+                    storage: {
+                        value: resultHtml,
+                        representation: "storage"
+                    }
+                }
+            });
+            httpRequest.send();
+
+            return resultHtml;
         };
     }
     ;
@@ -155,7 +204,15 @@
 
     ConfluenceGenerator.title = "Confluence Content Generator";
 
-    ConfluenceGenerator.fileExtension = "md";
+    ConfluenceGenerator.fileExtension = "html";
+
+    ConfluenceGenerator.inputs = [
+
+        InputField("host", "Confluence URL", "String"),
+        InputField("username", "Confluence Username", "String"),
+        InputField("password", "Confluence Password", "SecureValue"),
+        InputField("page_id", "Page ID to update", "Number"),
+    ];
 
     registerCodeGenerator(ConfluenceGenerator);
 

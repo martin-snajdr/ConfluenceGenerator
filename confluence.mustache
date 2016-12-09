@@ -1,44 +1,44 @@
-# {{name}}
+<h1>{{name}}</h1>
 
-## Endpoint
-_{{{ method }}} {{{ path }}}_
+<h2>Endpoint</h2>
+<p><strong>{{{ method }}} {{{ path }}}</strong></p>
 
 {{#request}}
-## Request{{#contentType}} ({{{contentType}}}){{/contentType}}
+<h2>Request{{#contentType}} ({{{contentType}}}){{/contentType}}</h2>
 
 {{#headers?}}
-### Headers
-
+<h3>Headers</h3>
+<ul>
 {{#headers}}
-+ {{{key}}}: {{{value}}}
+<li>{{{key}}}: {{{value}}}</li>
 {{/headers}}
-
+</ul>
 {{/headers?}}
-{{#body?}}
-### Body
 
-```
+{{#body?}}
+<h3>Body</h3>
+<code>
 {{{body}}}
-```
+</code>
 {{/body?}}
 {{/request}}
 
 {{#response}}
-## Response {{#contentType}} ({{{contentType}}}){{/contentType}}
+<h2>Response {{#contentType}} ({{{contentType}}}){{/contentType}}</h2>
 
 {{#headers?}}
-### Headers
+<h3>Headers</h3>
 
+<ul>
 {{#headers}}
-+ {{{key}}}: {{{value}}}
+<li>{{{key}}}: {{{value}}}</li>
 {{/headers}}
-
+</ul>
 {{/headers?}}
 {{#body?}}
-### Body
-
-```
+<h3>Body</h3>
+<code>
 {{{body}}}
-```
+</code>
 {{/body?}}
 {{/response}}
